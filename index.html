@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compliance Optimization Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:             #F1F5F9;
+  --surface:        #FFFFFF;
+  --primary:        #1E3A5F;
+  --primary-light:  #EFF6FF;
+  --accent:         #2563EB;
+  --success:        #059669;
+  --success-lt:     #D1FAE5;
+  --warning:        #D97706;
+  --warning-lt:     #FEF3C7;
+  --danger:         #DC2626;
+  --danger-lt:      #FEE2E2;
+  --text:           #0F172A;
+  --text-2:         #475569;
+  --text-3:         #94A3B8;
+  --border:         #E2E8F0;
+  --r:              12px;
+  --shadow:         0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md:      0 4px 16px rgba(0,0,0,.08);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  background: var(--bg); color: var(--text);
+  min-height: 100vh; -webkit-font-smoothing: antialiased;
+}
+
+/* ── Header ─────────────────────────────────────────────────── */
+.header {
+  background: var(--primary); color: #fff;
+  padding: 14px 24px; display: flex; align-items: center; gap: 14px;
+  position: sticky; top: 0; z-index: 100;
+  box-shadow: 0 2px 12px rgba(0,0,0,.25);
+}
+.header-icon {
+  width: 42px; height: 42px; background: rgba(255,255,255,.15);
+  border-radius: 10px; display: flex; align-items: center;
+  justify-content: center; font-size: 22px; flex-shrink: 0;
+}
+.header-text h1 { font-size: 1.05rem; font-weight: 700; letter-spacing: -.2px }
+.header-text p  { font-size: 0.72rem; opacity: .65; margin-top: 2px }
+.header-badge {
+  margin-left: auto; background: rgba(220,38,38,.25);
+  border: 1px solid rgba(220,38,38,.5); color: #FCA5A5;
+  padding: 5px 13px; border-radius: 20px;
+  font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .6px;
+  white-space: nowrap; flex-shrink: 0;
+}
+
+/* ── Layout ──────────────────────────────────────────────────── */
+.container { max-width: 1080px; margin: 0 auto; padding: 24px 20px }
+.grid-4 {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 14px; margin-bottom: 20px;
+}
+.card {
+  background: var(--surface); border-radius: var(--r);
+  border: 1px solid var(--border); box-shadow: var(--shadow); padding: 20px;
+}
+.card-title {
+  font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .9px; color: var(--text-3); margin-bottom: 16px;
+}
+
+/* ── KPI Cards ───────────────────────────────────────────────── */
+.kpi { padding: 18px 20px }
+.kpi-value { font-size: 2rem; font-weight: 800; line-height: 1 }
+.kpi-label { font-size: 0.67rem; color: var(--text-2); margin-top: 5px; text-transform: uppercase; letter-spacing: .5px }
+.kpi-sub   { font-size: 0.7rem; color: var(--text-3); margin-top: 3px }
+
+/* ── Chart ───────────────────────────────────────────────────── */
+.chart-card { margin-bottom: 20px }
+.chart-wrap { position: relative; height: 290px }
+
+/* ── Optimization Panel ──────────────────────────────────────── */
+.opt-panel { margin-bottom: 20px }
+.opt-question { font-size: 1rem; font-weight: 700; margin-bottom: 18px; line-height: 1.4 }
+
+.priority-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 12px; margin-bottom: 20px;
+}
+.p-card {
+  border: 2px solid var(--border); border-radius: var(--r);
+  padding: 18px 14px; cursor: pointer; text-align: center;
+  transition: all .18s; user-select: none;
+}
+.p-card:hover { border-color: var(--accent); background: var(--primary-light) }
+.p-card.sel-high   { border-color: var(--success); background: var(--success-lt) }
+.p-card.sel-medium { border-color: var(--warning); background: var(--warning-lt) }
+.p-card.sel-low    { border-color: var(--danger);  background: var(--danger-lt)  }
+.p-icon  { font-size: 28px; margin-bottom: 8px }
+.p-label { font-size: 1rem; font-weight: 800; margin-bottom: 5px }
+.p-desc  { font-size: 0.72rem; color: var(--text-2); line-height: 1.45 }
+
+.opt-btn {
+  width: 100%; padding: 15px; background: var(--accent); color: #fff;
+  border: none; border-radius: var(--r); font-size: 0.95rem; font-weight: 700;
+  cursor: pointer; transition: background .15s, transform .1s;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.opt-btn:hover:not(:disabled) { background: #1D4ED8; transform: translateY(-1px) }
+.opt-btn:disabled { opacity: .45; cursor: not-allowed }
+
+/* ── Results ─────────────────────────────────────────────────── */
+.results {
+  margin-top: 20px; border-radius: var(--r);
+  border: 2px solid var(--border); overflow: hidden;
+  display: none; animation: fadeIn .3s ease;
+}
+.results.show { display: block }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+
+.res-header { padding: 18px 20px; color: #fff }
+.res-header h3  { font-size: 1.05rem; font-weight: 800 }
+.res-header p   { font-size: 0.78rem; opacity: .82; margin-top: 3px }
+
+.res-body { background: var(--surface); padding: 20px }
+.actions-title {
+  font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .9px; color: var(--text-3); margin-bottom: 14px;
+}
+.action-row {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 0; border-bottom: 1px solid var(--border);
+}
+.action-row:last-child { border-bottom: none }
+.action-arrow { font-size: 20px; flex-shrink: 0; margin-top: 1px; width: 28px; text-align: center }
+.action-text  { font-size: 0.88rem; font-weight: 700; color: var(--text) }
+.action-sub   { font-size: 0.75rem; color: var(--text-2); margin-top: 3px }
+
+.impact-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 12px; margin-top: 20px;
+}
+.impact-card { border-radius: 10px; padding: 16px; text-align: center }
+.impact-value { font-size: 1.45rem; font-weight: 800; line-height: 1 }
+.impact-label { font-size: 0.63rem; text-transform: uppercase; letter-spacing: .6px; margin-top: 5px }
+
+/* ── Responsive ──────────────────────────────────────────────── */
+@media (max-width: 680px) {
+  .grid-4       { grid-template-columns: 1fr 1fr }
+  .priority-grid { grid-template-columns: 1fr }
+  .impact-grid  { grid-template-columns: 1fr }
+  .header-badge { display: none }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-icon">📋</div>
+  <div class="header-text">
+    <h1>Compliance Optimization Dashboard</h1>
+    <p>City Center Deployment &nbsp;·&nbsp; Government Relations Priority</p>
+  </div>
+  <div class="header-badge">⚠ 7 Months Non-Compliant</div>
+</div>
+
+<div class="container">
+
+  <!-- KPI Strip -->
+  <div class="grid-4">
+    <div class="card kpi">
+      <div class="kpi-value" style="color:var(--danger)">325</div>
+      <div class="kpi-label">Current Deployment</div>
+      <div class="kpi-sub">vs. 300 cap &nbsp;·&nbsp; +8.3% over</div>
+    </div>
+    <div class="card kpi">
+      <div class="kpi-value">300</div>
+      <div class="kpi-label">City Center Max Cap</div>
+      <div class="kpi-sub">Permitted vehicle limit</div>
+    </div>
+    <div class="card kpi">
+      <div class="kpi-value" style="color:var(--danger)">7</div>
+      <div class="kpi-label">Months Non-Compliant</div>
+      <div class="kpi-sub">Sep 2025 – Mar 2026</div>
+    </div>
+    <div class="card kpi">
+      <div class="kpi-value" style="color:var(--success)">8</div>
+      <div class="kpi-label">Months Compliant</div>
+      <div class="kpi-sub">Jan 2025 – Aug 2025</div>
+    </div>
+  </div>
+
+  <!-- Chart -->
+  <div class="card chart-card">
+    <div class="card-title">Monthly Deployment vs. City Center Max Cap &nbsp;·&nbsp; Jan 2025 – Mar 2026</div>
+    <div class="chart-wrap">
+      <canvas id="deployChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Optimization Panel -->
+  <div class="card opt-panel">
+    <div class="card-title">Compliance Optimization Engine</div>
+    <div class="opt-question">How important is 100% compliance with this requirement?</div>
+
+    <div class="priority-grid">
+      <div class="p-card" id="card-high" onclick="selectPriority('high')">
+        <div class="p-icon">🛡️</div>
+        <div class="p-label" style="color:var(--success)">High</div>
+        <div class="p-desc">Full compliance, no exceptions. Protect the GR relationship above all else.</div>
+      </div>
+      <div class="p-card" id="card-medium" onclick="selectPriority('medium')">
+        <div class="p-icon">⚖️</div>
+        <div class="p-label" style="color:var(--warning)">Medium</div>
+        <div class="p-desc">Minimal compliance risk with a modest topline upside. Balanced approach.</div>
+      </div>
+      <div class="p-card" id="card-low" onclick="selectPriority('low')">
+        <div class="p-icon">📈</div>
+        <div class="p-label" style="color:var(--danger)">Low</div>
+        <div class="p-desc">Maximize topline growth. Accept elevated compliance risk.</div>
+      </div>
+    </div>
+
+    <button class="opt-btn" id="opt-btn" onclick="runOptimization()" disabled>
+      ⚡ Optimize Compliance
+    </button>
+
+    <!-- Results -->
+    <div class="results" id="results">
+      <div class="res-header" id="res-header">
+        <h3 id="res-title"></h3>
+        <p  id="res-sub"></p>
+      </div>
+      <div class="res-body">
+        <div class="actions-title">Recommended Actions</div>
+        <div id="actions-list"></div>
+        <div class="impact-grid" id="impact-grid"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ── Chart ───────────────────────────────────────────────────── */
+const LABELS     = ['Jan 25','Feb 25','Mar 25','Apr 25','May 25','Jun 25',
+                    'Jul 25','Aug 25','Sep 25','Oct 25','Nov 25','Dec 25',
+                    'Jan 26','Feb 26','Mar 26'];
+const DEPLOYMENT = [275, 290, 300, 300, 300, 300, 295, 300, 315, 325, 325, 325, 325, 325, 325];
+const CAP        = 300;
+
+const barColors   = DEPLOYMENT.map(v => v > CAP ? 'rgba(220,38,38,.75)' : 'rgba(5,150,105,.75)');
+const barBorders  = DEPLOYMENT.map(v => v > CAP ? '#DC2626' : '#059669');
+
+new Chart(document.getElementById('deployChart').getContext('2d'), {
+  type: 'bar',
+  data: {
+    labels: LABELS,
+    datasets: [
+      {
+        label: 'Deployment',
+        data: DEPLOYMENT,
+        backgroundColor: barColors,
+        borderColor: barBorders,
+        borderWidth: 1.5,
+        borderRadius: 4,
+        order: 2,
+      },
+      {
+        label: 'City Center Max Cap (300)',
+        data: Array(LABELS.length).fill(CAP),
+        type: 'line',
+        borderColor: '#1E3A5F',
+        borderWidth: 2.5,
+        borderDash: [6, 4],
+        pointRadius: 0,
+        fill: false,
+        order: 1,
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index' },
+    plugins: {
+      legend: { position: 'top', labels: { boxWidth: 14, font: { size: 12 } } },
+      tooltip: {
+        callbacks: {
+          afterLabel: ctx => {
+            if (ctx.datasetIndex === 0) {
+              const v = ctx.raw;
+              return v > CAP
+                ? `⚠ Over cap by ${v - CAP} vehicles`
+                : `✓ Within cap (${CAP - v} under)`;
+            }
+          }
+        }
+      }
+    },
+    scales: {
+      y: {
+        min: 240, max: 360,
+        grid: { color: '#F1F5F9' },
+        ticks: { font: { size: 11 } }
+      },
+      x: {
+        grid: { display: false },
+        ticks: { font: { size: 11 } }
+      }
+    }
+  }
+});
+
+/* ── Optimization Plans ──────────────────────────────────────── */
+const PLANS = {
+  high: {
+    title:    'High Priority — Full Compliance Plan',
+    subtitle: 'GR relationship protected · Zero tolerance for violation',
+    headerBg: '#059669',
+    actions: [
+      {
+        arrow: '↓',
+        text:  'Lower daily deployment by 18%',
+        sub:   '325 → 267 vehicles deployed in City Center zone'
+      },
+      {
+        arrow: '↑',
+        text:  'Increase City Center move tasks: 3/hr → 6/hr',
+        sub:   'Rebalancing frequency doubled to enforce zone cap in real time'
+      }
+    ],
+    impact: [
+      { value: '✅ Eliminated', label: 'Compliance Violation Risk', bg: '#D1FAE5', color: '#059669' },
+      { value: '−2%',          label: 'Topline Revenue Impact',    bg: '#FEE2E2', color: '#DC2626' },
+      { value: '+3%',          label: 'Labor Cost to Ops',         bg: '#FEF3C7', color: '#D97706' },
+    ]
+  },
+  medium: {
+    title:    'Medium Priority — Balanced Compliance Plan',
+    subtitle: 'Minimal violation risk · Modest topline upside',
+    headerBg: '#D97706',
+    actions: [
+      {
+        arrow: '↓',
+        text:  'Lower daily deployment by 5%',
+        sub:   '325 → 309 vehicles deployed in City Center zone'
+      },
+      {
+        arrow: '→',
+        text:  'Move task frequency: No change',
+        sub:   'Maintain 3 City Center move tasks per hour'
+      }
+    ],
+    impact: [
+      { value: '⚠ Minimal',  label: 'Compliance Violation Risk', bg: '#FEF3C7', color: '#D97706' },
+      { value: '+2%',         label: 'Topline Revenue Impact',    bg: '#D1FAE5', color: '#059669' },
+      { value: '+0.5%',       label: 'Labor Cost to Ops',         bg: '#F1F5F9', color: '#475569' },
+    ]
+  },
+  low: {
+    title:    'Low Priority — Growth Maximization Plan',
+    subtitle: 'Compliance risk accepted · Maximum topline',
+    headerBg: '#DC2626',
+    actions: [
+      {
+        arrow: '→',
+        text:  'Daily deployment: No change',
+        sub:   'Maintain 325 vehicles in City Center zone'
+      },
+      {
+        arrow: '↓',
+        text:  'Decrease City Center move tasks: 3/hr → 1/hr',
+        sub:   'Reduced rebalancing frequency lowers labor cost'
+      }
+    ],
+    impact: [
+      { value: '🔴 Elevated', label: 'Compliance Violation Risk', bg: '#FEE2E2', color: '#DC2626' },
+      { value: '+10%',         label: 'Topline Revenue Impact',    bg: '#D1FAE5', color: '#059669' },
+      { value: '−1%',          label: 'Labor Cost to Ops',         bg: '#D1FAE5', color: '#059669' },
+    ]
+  }
+};
+
+/* ── UI Logic ────────────────────────────────────────────────── */
+let selected = null;
+
+function selectPriority(p) {
+  selected = p;
+  ['high','medium','low'].forEach(x => {
+    const el = document.getElementById('card-' + x);
+    el.className = 'p-card' + (x === p ? ' sel-' + x : '');
+  });
+  document.getElementById('opt-btn').disabled = false;
+}
+
+function runOptimization() {
+  if (!selected) return;
+  const plan = PLANS[selected];
+
+  document.getElementById('res-header').style.background = plan.headerBg;
+  document.getElementById('res-title').textContent = plan.title;
+  document.getElementById('res-sub').textContent   = plan.subtitle;
+
+  document.getElementById('actions-list').innerHTML = plan.actions.map(a => `
+    <div class="action-row">
+      <div class="action-arrow">${a.arrow}</div>
+      <div>
+        <div class="action-text">${a.text}</div>
+        <div class="action-sub">${a.sub}</div>
+      </div>
+    </div>`).join('');
+
+  document.getElementById('impact-grid').innerHTML = plan.impact.map(i => `
+    <div class="impact-card" style="background:${i.bg}">
+      <div class="impact-value" style="color:${i.color}">${i.value}</div>
+      <div class="impact-label" style="color:${i.color}">${i.label}</div>
+    </div>`).join('');
+
+  const results = document.getElementById('results');
+  results.className = 'results show';
+  results.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+</script>
+</body>
+</html>
