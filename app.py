@@ -118,8 +118,19 @@ def get_recommendation(city, priority):
     max_d = max(n[1] for n in neighbors) if neighbors else 1
     sim_scores = {n[0]: max(10, round((1 - n[1] / (max_d * 2)) * 100)) for n in neighbors}
 
+    cost = feats['cost_per_task']
+
     def monthly_rev_delta(target):
         return int(rev * (target - cur) * 30)
+
+    def annual_rev_delta(target):
+        return int(rev * (target - cur) * 30 * 12)
+
+    def annual_ops_delta(target, task_multiplier=1.0):
+        # ops cost = tasks × cost_per_task; tasks = deployment × 3/day × 30days
+        cur_monthly_ops  = cur    * 3 * 30 * cost
+        tgt_monthly_ops  = target * 3 * 30 * cost * task_multiplier
+        return int((tgt_monthly_ops - cur_monthly_ops) * 12)
 
     sim3 = similar[:3]
 
@@ -148,6 +159,8 @@ def get_recommendation(city, priority):
             'insight': insight, 'target': target, 'current': int(cur), 'cap': int(cap),
             'delta_pct': round(delta_pct, 1), 'comp_prob': comp_prob,
             'rev_delta': monthly_rev_delta(target),
+            'annual_rev': annual_rev_delta(target),
+            'annual_ops': annual_ops_delta(target, task_multiplier=2.0),
             'actions': [
                 {'arrow': '↓' if target < cur else '→',
                  'text':  f'{"Lower" if target < cur else "Hold"} daily deployment to {target:,} vehicles',
@@ -157,10 +170,10 @@ def get_recommendation(city, priority):
             ],
             'impact': [
                 {'val': '✅ Eliminated', 'lbl': 'Compliance Violation Risk', 'bg': '#D1FAE5', 'col': '#059669'},
-                {'val': f'{round(delta_pct,1):+.1f}%', 'lbl': 'Topline Revenue Impact',
+                {'val': f'{round(delta_pct,1):+.1f}%', 'lbl': 'Annual Revenue Impact',
                  'bg': '#FEE2E2' if delta_pct < 0 else '#D1FAE5',
                  'col': '#DC2626' if delta_pct < 0 else '#059669'},
-                {'val': '+3%', 'lbl': 'Labor Cost to Ops', 'bg': '#FEF3C7', 'col': '#D97706'}
+                {'val': '+3%', 'lbl': 'Annual Ops Cost Impact', 'bg': '#FEF3C7', 'col': '#D97706'}
             ]
         }
 
@@ -178,6 +191,8 @@ def get_recommendation(city, priority):
             'target': target, 'current': int(cur), 'cap': int(cap),
             'delta_pct': round(delta_pct, 1), 'comp_prob': 85,
             'rev_delta': monthly_rev_delta(target),
+            'annual_rev': annual_rev_delta(target),
+            'annual_ops': annual_ops_delta(target, task_multiplier=1.0),
             'actions': [
                 {'arrow': '↓' if target < cur else '→',
                  'text':  f'{"Lower" if target < cur else "Adjust"} daily deployment to {target:,} vehicles',
@@ -187,10 +202,10 @@ def get_recommendation(city, priority):
             ],
             'impact': [
                 {'val': '⚠ Minimal', 'lbl': 'Compliance Violation Risk', 'bg': '#FEF3C7', 'col': '#D97706'},
-                {'val': f'{round(delta_pct,1):+.1f}%', 'lbl': 'Topline Revenue Impact',
+                {'val': f'{round(delta_pct,1):+.1f}%', 'lbl': 'Annual Revenue Impact',
                  'bg': '#D1FAE5' if delta_pct >= 0 else '#FEE2E2',
                  'col': '#059669' if delta_pct >= 0 else '#DC2626'},
-                {'val': '+0.5%', 'lbl': 'Labor Cost to Ops', 'bg': '#F1F5F9', 'col': '#475569'}
+                {'val': '+0.5%', 'lbl': 'Annual Ops Cost Impact', 'bg': '#F1F5F9', 'col': '#475569'}
             ]
         }
 
@@ -208,6 +223,8 @@ def get_recommendation(city, priority):
             'target': target, 'current': int(cur), 'cap': int(cap),
             'delta_pct': round(delta_pct, 1), 'comp_prob': 35,
             'rev_delta': monthly_rev_delta(target),
+            'annual_rev': annual_rev_delta(target),
+            'annual_ops': annual_ops_delta(target, task_multiplier=0.33),
             'actions': [
                 {'arrow': '↑' if target > cur else '→',
                  'text':  f'{"Increase" if target > cur else "Maintain"} daily deployment to {target:,} vehicles',
@@ -217,8 +234,8 @@ def get_recommendation(city, priority):
             ],
             'impact': [
                 {'val': '🔴 Elevated', 'lbl': 'Compliance Violation Risk', 'bg': '#FEE2E2', 'col': '#DC2626'},
-                {'val': f'{round(delta_pct,1):+.1f}%', 'lbl': 'Topline Revenue Impact', 'bg': '#D1FAE5', 'col': '#059669'},
-                {'val': '−1%', 'lbl': 'Labor Cost to Ops', 'bg': '#D1FAE5', 'col': '#059669'}
+                {'val': f'{round(delta_pct,1):+.1f}%', 'lbl': 'Annual Revenue Impact', 'bg': '#D1FAE5', 'col': '#059669'},
+                {'val': '−1%', 'lbl': 'Annual Ops Cost Impact', 'bg': '#D1FAE5', 'col': '#059669'}
             ]
         }
 

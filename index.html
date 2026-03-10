@@ -130,6 +130,7 @@ tbody td{padding:11px 14px;vertical-align:middle}
 .imp-card{border-radius:10px;padding:16px;text-align:center}
 .imp-val{font-size:1.45rem;font-weight:800;line-height:1}
 .imp-lbl{font-size:.63rem;text-transform:uppercase;letter-spacing:.6px;margin-top:5px}
+.imp-sub{font-size:.8rem;font-weight:700;margin-top:6px}
 /* ML similar cities strip */
 .ml-strip{background:#EFF6FF;border-top:1px solid #BFDBFE;padding:14px 20px}
 .ml-lbl{font-size:.63rem;font-weight:700;text-transform:uppercase;letter-spacing:.8px;
@@ -504,11 +505,26 @@ async function runOpt() {
       </div>`).join('');
 
     // Impact grid
-    document.getElementById('imp-grid').innerHTML = plan.impact.map(i => `
-      <div class="imp-card" style="background:${i.bg}">
+    const fmtDollar = n => {
+      if (n === 0) return '$0';
+      const abs = Math.abs(n);
+      const sign = n > 0 ? '+' : '−';
+      if (abs >= 1000000) return sign + '$' + (abs/1000000).toFixed(1) + 'M';
+      if (abs >= 1000)    return sign + '$' + Math.round(abs/1000) + 'K';
+      return sign + '$' + abs.toLocaleString();
+    };
+    const annRevStr = fmtDollar(plan.annual_rev);
+    const annOpsStr = plan.annual_ops !== undefined ? fmtDollar(plan.annual_ops) : null;
+    document.getElementById('imp-grid').innerHTML = plan.impact.map((i, idx) => {
+      let sub = '';
+      if (idx === 1 && plan.annual_rev !== undefined) sub = `<div class="imp-sub" style="color:${i.col}">${annRevStr} annual</div>`;
+      if (idx === 2 && plan.annual_ops !== undefined) sub = `<div class="imp-sub" style="color:${i.col}">${annOpsStr} annual</div>`;
+      return `<div class="imp-card" style="background:${i.bg}">
         <div class="imp-val" style="color:${i.col}">${i.val}</div>
         <div class="imp-lbl" style="color:${i.col}">${i.lbl}</div>
-      </div>`).join('');
+        ${sub}
+      </div>`;
+    }).join('');
 
     const r = document.getElementById('results');
     r.className = 'results show';
