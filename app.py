@@ -55,6 +55,18 @@ def city_summary(city_rows):
         if comp_rows else avg_dep / cap
     )
 
+    # City size tier — bigger cities face higher regulatory / political scrutiny
+    # so the model applies tighter compliance targets and faster move task urgency
+    if fleet >= 5000:
+        size_tier   = 'large'
+        size_factor = 1.0   # large: tightest targets
+    elif fleet >= 1500:
+        size_tier   = 'medium'
+        size_factor = 0.6   # medium: moderate tightening
+    else:
+        size_tier   = 'small'
+        size_factor = 0.0   # small: no additional tightening beyond base model
+
     return {
         'cap':                     cap,
         'fleet':                   fleet,
@@ -66,6 +78,8 @@ def city_summary(city_rows):
         'compliant_dep_ratio':     compliant_dep_ratio,
         'avg_overage':             avg_overage,
         'violation_months':        len(over_rows),
+        'size_tier':               size_tier,
+        'size_factor':             size_factor,
         'rev_per_veh':             city_rows[0]['rev_per_veh'],
         'cost_per_task':           city_rows[0]['cost_per_task'],
         'latest_deployment':       city_rows[-1]['deployment'],
@@ -137,6 +151,25 @@ def get_recommendation(city, priority):
 
     cost        = feats['cost_per_task']
     avg_overage = feats['avg_overage']
+    size_tier   = feats['size_tier']
+    size_factor = feats['size_factor']
+
+    # Size-based tightening: larger cities require more conservative targets
+    # High: large cities target 8% tighter, medium 5% tighter vs base model
+    # Low:  large cities can push 6% less over cap, medium 3% less
+    size_tight_high = 0.08 * size_factor   # subtract from target_ratio for high/med
+    size_tight_low  = 0.06 * size_factor   # reduce max overage for low
+
+    # Move task urgency window scales with city size (hours to clear exceedance)
+    # Large cities: 2hr (high), 4hr (med) — faster clearance, higher scrutiny
+    # Medium cities: 3hr (high), 6hr (med)
+    # Small cities:  4hr (high), 8hr (med)
+    task_windows = {
+        'large':  {'high': 2, 'med': 4},
+        'medium': {'high': 3, 'med': 6},
+        'small':  {'high': 4, 'med': 8},
+    }
+    size_label = {'large': 'Major market', 'medium': 'Mid-size market', 'small': 'Emerging market'}[size_tier]
 
     # ── ML-derived move task frequency ────────────────────────────────────────
     # Find compliant similar cities and look at their compliant deployment ratio
@@ -153,27 +186,30 @@ def get_recommendation(city, priority):
     def move_task_action(target, urgency='high'):
         """Derive a move task recommendation from comparable market data."""
         vehicles_to_clear = max(0, int(cur) - target)
-        # How quickly should moves happen? Based on urgency:
-        # High: clear within 4 operating hours; Med: 8 hrs; Low: no clearing
-        window_hrs = {'high': 4, 'med': 8, 'low': None}[urgency]
+        # Urgency window scales with city size — larger cities must clear faster
+        if urgency == 'low':
+            window_hrs = None
+        else:
+            window_hrs = task_windows[size_tier][urgency]
+
         if urgency == 'low' or vehicles_to_clear == 0:
             return {
                 'arrow': '↓',
-                'text':  'Reduce City Center move task frequency: 3/day → 1/day per vehicle',
-                'sub':   f'Similar markets ({similar[0]}, {similar[1]}) accept overage and minimize costly move tasks to protect topline'
+                'text':  'Reduce City Center move task frequency',
+                'sub':   (f'{size_label}: similar markets ({similar[0]}, {similar[1]}) '
+                          f'accept overage and minimize costly move tasks to protect topline')
             }
-        tasks_per_hr = math.ceil(vehicles_to_clear / window_hrs) if window_hrs else 0
-        # Reference comparable compliant markets
-        sim_names = ', '.join(compliant_neighbors[:2])
+        tasks_per_hr = math.ceil(vehicles_to_clear / window_hrs)
+        sim_names    = ', '.join(compliant_neighbors[:2])
         sim_comp_pct = round(sum(city_feats[c]['avg_compliance_rate'] for c in compliant_neighbors[:2]) / 2 * 100)
         sim_dep_pct  = round(comp_dep_ratio * 100)
         return {
             'arrow': '↑',
-            'text':  f'Execute {tasks_per_hr} move tasks/hr until City Center clears to cap',
-            'sub':   (f'{vehicles_to_clear:,} vehicles need to exit the zone '
+            'text':  f'Execute {tasks_per_hr} move tasks/hr — clear to cap within {window_hrs}hr',
+            'sub':   (f'{size_label}: {vehicles_to_clear:,} vehicles must exit the zone '
                       f'({int(cur):,} → {target:,}). '
                       f'{sim_names} achieve {sim_comp_pct}% compliance '
-                      f'running at {sim_dep_pct}% of cap with similar task cadence.')
+                      f'at {sim_dep_pct}% of cap with comparable task cadence.')
         }
 
     def monthly_rev_delta(target):
@@ -193,19 +229,21 @@ def get_recommendation(city, priority):
     if priority == 'high':
         compliant_sim = [c for c in similar if city_feats[c]['avg_compliance_rate'] >= 0.85]
         base = compliant_sim if compliant_sim else similar
-        target_ratio = min(
+        base_ratio = min(
             sum(city_feats[c]['avg_deployment_ratio'] for c in base) / len(base),
             0.93
         )
-        target = max(int(cap * target_ratio), int(cap * 0.80))
+        # Larger cities: tighten target further due to higher regulatory scrutiny
+        target_ratio = max(base_ratio - size_tight_high, 0.78)
+        target = max(int(cap * target_ratio), int(cap * 0.78))
         delta_pct = (target - cur) / cur * 100
         comp_prob = 97 if target <= cap else 75
 
         if compliant_sim:
             avg_c = round(sum(city_feats[c]['avg_compliance_rate'] for c in compliant_sim[:3]) / min(3, len(compliant_sim)) * 100)
-            insight = f"{similar[0]} & {similar[1]} achieve {avg_c}% compliance at {round(target_ratio*100)}% of cap"
+            insight = f"{size_label} — {similar[0]} & {similar[1]} achieve {avg_c}% compliance at {round(target_ratio*100)}% of cap"
         else:
-            insight = f"Targeting {round(target_ratio*100)}% cap utilization — modeled from {len(similar)} similar-scale markets"
+            insight = f"{size_label} — targeting {round(target_ratio*100)}% of cap, modeled from {len(similar)} comparable markets"
 
         return {
             'priority': 'high', 'bg': '#059669',
@@ -213,6 +251,7 @@ def get_recommendation(city, priority):
             'sub':   'GR relationship protected · Zero tolerance for violation',
             'similar_cities': sim3, 'sim_scores': {c: sim_scores[c] for c in sim3},
             'insight': insight, 'target': target, 'current': int(cur), 'cap': int(cap),
+            'size_tier': size_tier, 'size_label': size_label,
             'delta_pct': round(delta_pct, 1), 'comp_prob': comp_prob,
             'rev_delta': monthly_rev_delta(target),
             'annual_rev': annual_rev_delta(target),
@@ -234,7 +273,8 @@ def get_recommendation(city, priority):
 
     elif priority == 'med':
         avg_ratio = sum(city_feats[c]['avg_deployment_ratio'] for c in sim3) / len(sim3)
-        target_ratio = min(avg_ratio * 0.97, 0.97)
+        base_ratio = min(avg_ratio * 0.97, 0.97)
+        target_ratio = max(base_ratio - size_tight_high * 0.5, 0.82)
         target = int(cap * target_ratio)
         delta_pct = (target - cur) / cur * 100
         return {
@@ -242,8 +282,9 @@ def get_recommendation(city, priority):
             'title': 'Medium Priority — Balanced Compliance Plan',
             'sub':   'Minimal violation risk · Modest topline upside',
             'similar_cities': sim3, 'sim_scores': {c: sim_scores[c] for c in sim3},
-            'insight': f"Similar markets run at {round(target_ratio*100)}% of cap, averaging ~85% compliance",
+            'insight': f"{size_label} — similar markets run at {round(target_ratio*100)}% of cap, averaging ~85% compliance",
             'target': target, 'current': int(cur), 'cap': int(cap),
+            'size_tier': size_tier, 'size_label': size_label,
             'delta_pct': round(delta_pct, 1), 'comp_prob': 85,
             'rev_delta': monthly_rev_delta(target),
             'annual_rev': annual_rev_delta(target),
@@ -265,7 +306,8 @@ def get_recommendation(city, priority):
 
     else:  # low
         max_ratio = max(city_feats[c]['avg_deployment_ratio'] for c in sim3)
-        target_ratio = min(max_ratio * 1.05, 1.20)
+        # Larger cities: cap how far over the limit we recommend going
+        target_ratio = min(max_ratio * 1.05, 1.20 - size_tight_low)
         target = int(cap * target_ratio)
         delta_pct = (target - cur) / cur * 100
         return {
@@ -273,8 +315,9 @@ def get_recommendation(city, priority):
             'title': 'Low Priority — Growth Maximization Plan',
             'sub':   'Compliance risk accepted · Maximum topline',
             'similar_cities': sim3, 'sim_scores': {c: sim_scores[c] for c in sim3},
-            'insight': f"Growth-mode similar markets push to {round(target_ratio*100)}% of cap for max revenue",
+            'insight': f"{size_label} — growth-mode similar markets push to {round(target_ratio*100)}% of cap for max revenue",
             'target': target, 'current': int(cur), 'cap': int(cap),
+            'size_tier': size_tier, 'size_label': size_label,
             'delta_pct': round(delta_pct, 1), 'comp_prob': 35,
             'rev_delta': monthly_rev_delta(target),
             'annual_rev': annual_rev_delta(target),
