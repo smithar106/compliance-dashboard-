@@ -41,6 +41,20 @@ def city_summary(city_rows):
     cap       = city_rows[0]['cap']
     fleet     = city_rows[0]['fleet']
     avg_dep   = sum(dep_vals) / len(dep_vals)
+
+    # Violation overage: when deployment > cap, how many vehicles over?
+    over_rows   = [r for r in city_rows if not r['compliant']]
+    avg_overage = (
+        sum(r['deployment'] - cap for r in over_rows) / len(over_rows)
+        if over_rows else 0.0
+    )
+    # Compliant deployment ratio: avg deployment/cap in months where compliant
+    comp_rows = [r for r in city_rows if r['compliant']]
+    compliant_dep_ratio = (
+        sum(r['deployment'] for r in comp_rows) / len(comp_rows) / cap
+        if comp_rows else avg_dep / cap
+    )
+
     return {
         'cap':                     cap,
         'fleet':                   fleet,
@@ -49,6 +63,9 @@ def city_summary(city_rows):
         'recent_compliance_rate':  sum(1 if r['compliant'] else 0 for r in recent) / len(recent),
         'avg_deployment_ratio':    avg_dep / cap,
         'recent_deployment_ratio': sum(r['deployment'] for r in recent) / len(recent) / cap,
+        'compliant_dep_ratio':     compliant_dep_ratio,
+        'avg_overage':             avg_overage,
+        'violation_months':        len(over_rows),
         'rev_per_veh':             city_rows[0]['rev_per_veh'],
         'cost_per_task':           city_rows[0]['cost_per_task'],
         'latest_deployment':       city_rows[-1]['deployment'],
@@ -118,7 +135,46 @@ def get_recommendation(city, priority):
     max_d = max(n[1] for n in neighbors) if neighbors else 1
     sim_scores = {n[0]: max(10, round((1 - n[1] / (max_d * 2)) * 100)) for n in neighbors}
 
-    cost = feats['cost_per_task']
+    cost        = feats['cost_per_task']
+    avg_overage = feats['avg_overage']
+
+    # ── ML-derived move task frequency ────────────────────────────────────────
+    # Find compliant similar cities and look at their compliant deployment ratio
+    # to infer how many vehicles need to be moved and at what rate.
+    compliant_neighbors = [c for c in similar if city_feats[c]['avg_compliance_rate'] >= 0.75]
+    if not compliant_neighbors:
+        compliant_neighbors = similar[:3]
+
+    # Average compliant deployment ratio among comparable high-compliance cities
+    comp_dep_ratio = sum(city_feats[c]['compliant_dep_ratio'] for c in compliant_neighbors) / len(compliant_neighbors)
+    # Avg overage in comparable markets when they do violate (context for task demand)
+    sim_avg_overage = sum(city_feats[c]['avg_overage'] for c in similar[:3]) / 3
+
+    def move_task_action(target, urgency='high'):
+        """Derive a move task recommendation from comparable market data."""
+        vehicles_to_clear = max(0, int(cur) - target)
+        # How quickly should moves happen? Based on urgency:
+        # High: clear within 4 operating hours; Med: 8 hrs; Low: no clearing
+        window_hrs = {'high': 4, 'med': 8, 'low': None}[urgency]
+        if urgency == 'low' or vehicles_to_clear == 0:
+            return {
+                'arrow': '↓',
+                'text':  'Reduce City Center move task frequency: 3/day → 1/day per vehicle',
+                'sub':   f'Similar markets ({similar[0]}, {similar[1]}) accept overage and minimize costly move tasks to protect topline'
+            }
+        tasks_per_hr = math.ceil(vehicles_to_clear / window_hrs) if window_hrs else 0
+        # Reference comparable compliant markets
+        sim_names = ', '.join(compliant_neighbors[:2])
+        sim_comp_pct = round(sum(city_feats[c]['avg_compliance_rate'] for c in compliant_neighbors[:2]) / 2 * 100)
+        sim_dep_pct  = round(comp_dep_ratio * 100)
+        return {
+            'arrow': '↑',
+            'text':  f'Execute {tasks_per_hr} move tasks/hr until City Center clears to cap',
+            'sub':   (f'{vehicles_to_clear:,} vehicles need to exit the zone '
+                      f'({int(cur):,} → {target:,}). '
+                      f'{sim_names} achieve {sim_comp_pct}% compliance '
+                      f'running at {sim_dep_pct}% of cap with similar task cadence.')
+        }
 
     def monthly_rev_delta(target):
         return int(rev * (target - cur) * 30)
@@ -162,11 +218,10 @@ def get_recommendation(city, priority):
             'annual_rev': annual_rev_delta(target),
             'annual_ops': annual_ops_delta(target, task_multiplier=2.0),
             'actions': [
-                {'arrow': '↓' if target < cur else '→',
-                 'text':  f'{"Lower" if target < cur else "Hold"} daily deployment to {target:,} vehicles',
-                 'sub':   f'{int(cur):,} → {target:,} in City Center zone ({abs(round(delta_pct,1))}% {"reduction" if target < cur else "no change"})'},
-                {'arrow': '↑', 'text': 'Increase City Center move tasks: 3/hr → 6/hr',
-                 'sub':   'Rebalancing frequency doubled to enforce zone cap in real time'}
+                {'arrow': '↓' if target < cur else ('↑' if target > cur else '→'),
+                 'text':  f'{"Lower" if target < cur else "Increase" if target > cur else "Hold"} daily City Center deployment to {target:,} vehicles',
+                 'sub':   f'{int(cur):,} → {target:,} vehicles ({abs(round(delta_pct,1))}% {"reduction" if target < cur else "increase" if target > cur else "no change"})'},
+                move_task_action(target, urgency='high')
             ],
             'impact': [
                 {'val': '✅ Eliminated', 'lbl': 'Compliance Violation Risk', 'bg': '#D1FAE5', 'col': '#059669'},
@@ -194,11 +249,10 @@ def get_recommendation(city, priority):
             'annual_rev': annual_rev_delta(target),
             'annual_ops': annual_ops_delta(target, task_multiplier=1.0),
             'actions': [
-                {'arrow': '↓' if target < cur else '→',
-                 'text':  f'{"Lower" if target < cur else "Adjust"} daily deployment to {target:,} vehicles',
-                 'sub':   f'{int(cur):,} → {target:,} ({abs(round(delta_pct,1))}% {"reduction" if target < cur else "adjustment"})'},
-                {'arrow': '→', 'text': 'Move task frequency: No change',
-                 'sub':   'Maintain 3 City Center move tasks per hour'}
+                {'arrow': '↓' if target < cur else ('↑' if target > cur else '→'),
+                 'text':  f'{"Lower" if target < cur else "Increase" if target > cur else "Hold"} daily City Center deployment to {target:,} vehicles',
+                 'sub':   f'{int(cur):,} → {target:,} vehicles ({abs(round(delta_pct,1))}% {"reduction" if target < cur else "increase" if target > cur else "no change"})'},
+                move_task_action(target, urgency='med')
             ],
             'impact': [
                 {'val': '⚠ Minimal', 'lbl': 'Compliance Violation Risk', 'bg': '#FEF3C7', 'col': '#D97706'},
@@ -229,8 +283,7 @@ def get_recommendation(city, priority):
                 {'arrow': '↑' if target > cur else '→',
                  'text':  f'{"Increase" if target > cur else "Maintain"} daily deployment to {target:,} vehicles',
                  'sub':   f'{int(cur):,} → {target:,} ({abs(round(delta_pct,1))}% {"increase" if target > cur else "no change"}) in City Center'},
-                {'arrow': '↓', 'text': 'Decrease City Center move tasks: 3/hr → 1/hr',
-                 'sub':   'Reduced rebalancing lowers labor cost, maximizes zone density'}
+                move_task_action(target, urgency='low')
             ],
             'impact': [
                 {'val': '🔴 Elevated', 'lbl': 'Compliance Violation Risk', 'bg': '#FEE2E2', 'col': '#DC2626'},
