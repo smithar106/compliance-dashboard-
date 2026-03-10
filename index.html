@@ -297,12 +297,12 @@ function buildLeaderboard() {
       <div class="kpi-sub">Across 4 continents</div>
     </div>
     <div class="card kpi">
-      <div class="kpi-val" style="color:${avgRate>=.6?'var(--success)':'var(--danger)}">${Math.round(avgRate*100)}%</div>
+      <div class="kpi-val" style="color:${avgRate>=.6?'var(--success)':'var(--danger)'}">${Math.round(avgRate*100)}%</div>
       <div class="kpi-lbl">Avg Compliance Rate</div>
       <div class="kpi-sub">Jan 2024 – Mar 2026</div>
     </div>
     <div class="card kpi">
-      <div class="kpi-val" style="color:${atRisk>0?'var(--danger)':'var(--success)}">${atRisk}</div>
+      <div class="kpi-val" style="color:${atRisk>0?'var(--danger)':'var(--success)'}">${atRisk}</div>
       <div class="kpi-lbl">Cities in Violation</div>
       <div class="kpi-sub">As of Mar 2026</div>
     </div>
@@ -374,7 +374,7 @@ function loadCity(name) {
   const capOk = latest.d <= info.cap;
   document.getElementById('city-kpis').innerHTML = `
     <div class="card kpi">
-      <div class="kpi-val" style="color:${capOk?'var(--success)':'var(--danger)}">${latest.d.toLocaleString()}</div>
+      <div class="kpi-val" style="color:${capOk?'var(--success)':'var(--danger)'}">${latest.d.toLocaleString()}</div>
       <div class="kpi-lbl">Current Deployment</div>
       <div class="kpi-sub">vs. cap of ${info.cap.toLocaleString()} (${capOk?'within cap':'+'+(latest.d-info.cap)+' over'})</div>
     </div>
@@ -384,12 +384,12 @@ function loadCity(name) {
       <div class="kpi-sub">Fleet size: ${info.fleet.toLocaleString()}</div>
     </div>
     <div class="card kpi">
-      <div class="kpi-val" style="color:${violCount>0?'var(--danger)':'var(--success)}">${violCount}</div>
+      <div class="kpi-val" style="color:${violCount>0?'var(--danger)':'var(--success)'}">${violCount}</div>
       <div class="kpi-lbl">Months Non-Compliant</div>
       <div class="kpi-sub">of 27 total months</div>
     </div>
     <div class="card kpi">
-      <div class="kpi-val" style="color:${recentViol>=4?'var(--danger)':recentViol>=2?'var(--warning)':'var(--success)}">${recentViol}/6</div>
+      <div class="kpi-val" style="color:${recentViol>=4?'var(--danger)':recentViol>=2?'var(--warning)':'var(--success)'}">${recentViol}/6</div>
       <div class="kpi-lbl">Recent Violations</div>
       <div class="kpi-sub">Last 6 months</div>
     </div>`;
