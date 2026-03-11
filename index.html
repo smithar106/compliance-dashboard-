@@ -66,6 +66,11 @@ table{width:100%;border-collapse:collapse;font-size:.83rem}
 thead th{padding:10px 14px;text-align:left;font-size:.65rem;font-weight:700;
   text-transform:uppercase;letter-spacing:.8px;color:var(--text3);
   border-bottom:2px solid var(--border);white-space:nowrap}
+thead th.sortable{cursor:pointer;user-select:none}
+thead th.sortable:hover{color:var(--text2);background:#F8FAFC}
+thead th.sort-asc::after{content:' ↑';opacity:.7}
+thead th.sort-desc::after{content:' ↓';opacity:.7}
+thead th.sort-asc,thead th.sort-desc{color:var(--accent)}
 tbody tr{border-bottom:1px solid var(--border);transition:background .1s}
 tbody tr:hover{background:#F8FAFC}
 tbody td{padding:11px 14px;vertical-align:middle}
@@ -182,14 +187,14 @@ tbody td{padding:11px 14px;vertical-align:middle}
         <thead>
           <tr>
             <th>#</th>
-            <th>City</th>
-            <th>Fleet</th>
-            <th>City Cap</th>
-            <th>Avg Monthly Revenue</th>
-            <th>Compliant Months</th>
-            <th>Compliance Rate</th>
-            <th>Last 6 Months</th>
-            <th>Mar 2026 Status</th>
+            <th class="sortable" onclick="sortTable('city')">City</th>
+            <th class="sortable" onclick="sortTable('fleet')">Fleet</th>
+            <th class="sortable" onclick="sortTable('cap')">City Cap</th>
+            <th class="sortable" onclick="sortTable('avg_rev')">Avg Monthly Revenue</th>
+            <th class="sortable" onclick="sortTable('comp')">Compliant Months</th>
+            <th class="sortable" onclick="sortTable('rate')">Compliance Rate</th>
+            <th class="sortable" onclick="sortTable('recent')">Last 6 Months</th>
+            <th class="sortable" onclick="sortTable('cur_ok')">Mar 2026 Status</th>
           </tr>
         </thead>
         <tbody id="lb-body"></tbody>
@@ -277,6 +282,62 @@ function showTab(id, el) {
 }
 
 // ── Leaderboard ───────────────────────────────────────────────────────────────
+let lbSortKey = 'rate';
+let lbSortDir = 'desc';
+
+function renderTableBody(data) {
+  const sorted = [...data].sort((a, b) => {
+    let av = a[lbSortKey], bv = b[lbSortKey];
+    if (typeof av === 'string') av = av.toLowerCase(), bv = bv.toLowerCase();
+    if (av < bv) return lbSortDir === 'asc' ? -1 : 1;
+    if (av > bv) return lbSortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+  const tbody = document.getElementById('lb-body');
+  tbody.innerHTML = sorted.map((c, i) => {
+    const col    = rateColor(c.rate);
+    const pct    = Math.round(c.rate * 100);
+    const status = c.cur_ok === 'yes'
+      ? '<span class="badge b-green">✓ Compliant</span>'
+      : '<span class="badge b-red">⚠ Violation</span>';
+    const recent = c.recent + '/6';
+    const recentCol = c.recent >= 5 ? 'var(--success)' : c.recent >= 3 ? 'var(--warning)' : 'var(--danger)';
+    return `<tr>
+      <td class="rank">${i+1}</td>
+      <td class="city-name">${c.city}</td>
+      <td class="num">${c.fleet.toLocaleString()}</td>
+      <td class="num">${c.cap.toLocaleString()}</td>
+      <td class="num">${fmt(c.avg_rev)}</td>
+      <td class="num">${c.comp}/${c.total}</td>
+      <td>
+        <div class="rate-wrap">
+          <div class="rate-bar"><div class="rate-fill" style="width:${pct}%;background:${col}"></div></div>
+          <div class="rate-pct" style="color:${col}">${pct}%</div>
+        </div>
+      </td>
+      <td style="color:${recentCol};font-weight:700">${recent}</td>
+      <td>${status}</td>
+    </tr>`;
+  }).join('');
+}
+
+function sortTable(key) {
+  if (lbSortKey === key) {
+    lbSortDir = lbSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    lbSortKey = key;
+    lbSortDir = key === 'city' ? 'asc' : 'desc';
+  }
+  // Update header indicators
+  document.querySelectorAll('thead th.sortable').forEach(th => {
+    th.classList.remove('sort-asc','sort-desc');
+    if (th.getAttribute('onclick') === `sortTable('${key}')`) {
+      th.classList.add(lbSortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+    }
+  });
+  renderTableBody(LEADERBOARD);
+}
+
 function rateColor(r) {
   if (r >= .80) return '#059669';
   if (r >= .60) return '#2563EB';
@@ -314,33 +375,13 @@ function buildLeaderboard() {
       <div class="kpi-sub">Vehicles globally</div>
     </div>`;
 
-  // Table
-  const tbody = document.getElementById('lb-body');
-  tbody.innerHTML = LEADERBOARD.map((c, i) => {
-    const col    = rateColor(c.rate);
-    const pct    = Math.round(c.rate * 100);
-    const status = c.cur_ok === 'yes'
-      ? '<span class="badge b-green">✓ Compliant</span>'
-      : '<span class="badge b-red">⚠ Violation</span>';
-    const recent = c.recent + '/6';
-    const recentCol = c.recent >= 5 ? 'var(--success)' : c.recent >= 3 ? 'var(--warning)' : 'var(--danger)';
-    return `<tr>
-      <td class="rank">${i+1}</td>
-      <td class="city-name">${c.city}</td>
-      <td class="num">${c.fleet.toLocaleString()}</td>
-      <td class="num">${c.cap.toLocaleString()}</td>
-      <td class="num">${fmt(c.avg_rev)}</td>
-      <td class="num">${c.comp}/${c.total}</td>
-      <td>
-        <div class="rate-wrap">
-          <div class="rate-bar"><div class="rate-fill" style="width:${pct}%;background:${col}"></div></div>
-          <div class="rate-pct" style="color:${col}">${pct}%</div>
-        </div>
-      </td>
-      <td style="color:${recentCol};font-weight:700">${recent}</td>
-      <td>${status}</td>
-    </tr>`;
-  }).join('');
+  // Table — set initial sort indicator
+  document.querySelectorAll('thead th.sortable').forEach(th => {
+    if (th.getAttribute('onclick') === `sortTable('${lbSortKey}')`) {
+      th.classList.add(lbSortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+    }
+  });
+  renderTableBody(LEADERBOARD);
 }
 
 // ── City Optimizer ────────────────────────────────────────────────────────────
